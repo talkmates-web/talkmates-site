@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import { formatDeadlineDate, isRegistrationClosed } from "../lib/deadline";
 import { Badge, Button, Panel, Alert } from "../components/ui";
 import { LogOut, Users, FileText, CalendarDays } from "lucide-react";
 
@@ -27,7 +28,7 @@ export default function AdminDashboard() {
 
     const { data, error } = await supabase
       .from("events")
-      .select("id,slug,title_ja,title_en,capacity,starts_at")
+      .select("id,slug,title_ja,title_en,capacity,starts_at,registration_deadline")
       .order("starts_at", { ascending: false })
       .limit(50);
 
@@ -107,6 +108,8 @@ export default function AdminDashboard() {
       {eventList.map((ev) => {
         const count = registrationCounts[ev.id] ?? 0;
         const isFull = ev.capacity !== null && count >= ev.capacity;
+        const isClosed = isRegistrationClosed(ev.registration_deadline);
+        const deadlineText = formatDeadlineDate("ja", ev.registration_deadline);
         return (
           <Panel key={ev.id} className="p-6">
             <div className="flex items-start justify-between gap-3">
@@ -118,10 +121,19 @@ export default function AdminDashboard() {
                   <CalendarDays className="h-4 w-4" />
                   {new Date(ev.starts_at).toLocaleString("ja-JP")}
                 </div>
+                {deadlineText && (
+                  <div className="mt-1 inline-flex items-center gap-2 text-sm text-slate-600">
+                    <CalendarDays className="h-4 w-4" />
+                    申込締切: {deadlineText}
+                  </div>
+                )}
               </div>
-              <Badge variant={isFull ? "error" : "success"}>
-                {count} / {ev.capacity ?? "∞"}
-              </Badge>
+              <div className="flex flex-col items-end gap-2">
+                {isClosed && <Badge variant="warning">締切済み</Badge>}
+                <Badge variant={isFull ? "error" : "success"}>
+                  {count} / {ev.capacity ?? "∞"}
+                </Badge>
+              </div>
             </div>
 
             <div className="mt-5 grid gap-3">

@@ -18,14 +18,14 @@ export default function Events() {
 
       const nextRes = await supabase
         .from("events")
-        .select("id,slug,starts_at,location,cover_path,capacity,title_en,title_ja,description_en,description_ja")
+        .select("id,slug,starts_at,registration_deadline,location,cover_path,capacity,title_en,title_ja,description_en,description_ja")
         .gte("starts_at", nowIso)
         .order("starts_at", { ascending: true })
         .limit(12);
 
       const pastRes = await supabase
         .from("events")
-        .select("id,slug,starts_at,location,cover_path,capacity,title_en,title_ja,description_en,description_ja")
+        .select("id,slug,starts_at,registration_deadline,location,cover_path,capacity,title_en,title_ja,description_en,description_ja")
         .lt("starts_at", nowIso)
         .order("starts_at", { ascending: false })
         .limit(36);

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { useLang } from "../contexts/LangContext";
 import { getEventRegistrationCount } from "../lib/eventHelpers";
+import { formatDeadlineDate, isRegistrationClosed } from "../lib/deadline";
 import { supabase } from "../lib/supabase";
 //lucide-reactはアイコン用の外部ライブラリ
 import { CalendarDays, MapPin } from "lucide-react";
@@ -76,6 +77,8 @@ export default function Card({ e }) {
   }, [e?.id, isEnded, capacity]);
 
   const dateText = formatDateOnly(lang, e.starts_at);
+  const deadlineText = formatDeadlineDate(lang, e.registration_deadline);
+  const isClosed = isRegistrationClosed(e.registration_deadline);
 
   const status = useMemo(() => {
     if (isEnded) {
@@ -83,6 +86,14 @@ export default function Card({ e }) {
         label: lang === "ja" ? "終了" : "Ended",
         pillClass: "bg-blue-100 text-blue-700 border border-blue-200",
         accent: "blue",
+      };
+    }
+
+    if (isClosed) {
+      return {
+        label: lang === "ja" ? "申込締切済み" : "Closed",
+        pillClass: "bg-amber-100 text-amber-800 border border-amber-200",
+        accent: "green",
       };
     }
 
@@ -119,7 +130,7 @@ export default function Card({ e }) {
       pillClass: "bg-green-100 text-green-700 border border-green-200",
       accent: "green",
     };
-  }, [isEnded, capacity, regCount, countErr, lang]);
+  }, [isEnded, isClosed, capacity, regCount, countErr, lang]);
 
   const buttonClass = "bg-green-600 hover:bg-green-700 focus-visible:ring-green-600";
 //return以下は問題ない
@@ -171,6 +182,15 @@ export default function Card({ e }) {
             <div className="flex items-center gap-2 min-w-0">
               <MapPin className="h-5 w-5 text-slate-500" />
               <span className="truncate">{e.location}</span>
+            </div>
+          )}
+          {deadlineText && (
+            <div className="flex items-center gap-2">
+              <CalendarDays className="h-5 w-5 text-slate-500" />
+              <span>
+                {lang === "ja" ? "締切: " : "Deadline: "}
+                {deadlineText}
+              </span>
             </div>
           )}
         </div>
