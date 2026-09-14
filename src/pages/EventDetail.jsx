@@ -4,11 +4,8 @@ import { useParams, Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useLang } from "../contexts/LangContext";
 import { getEventRegistrationCount } from "../lib/eventHelpers";
+import { formatDeadlineDate, isRegistrationClosed } from "../lib/deadline";
 import { CalendarDays, MapPin, Users, ArrowLeft } from "lucide-react";
-
-function pickLang(lang, en, ja) {
-  return lang === "ja" && ja ? ja : en;
-}
 
 function coverUrl(cover_path) {
   if (!cover_path) return "";
@@ -51,7 +48,7 @@ export default function EventDetail() {
         .from("events")
         // ★ count取得に event.id が必要
         .select(
-          "id,slug,starts_at,location,cover_path,title_en,title_ja,description_en,description_ja,capacity"
+          "id,slug,starts_at,registration_deadline,location,cover_path,title_en,title_ja,description_en,description_ja,capacity"
         )
         .eq("slug", slug)
         .maybeSingle();
@@ -105,15 +102,17 @@ export default function EventDetail() {
     };
   }, [event?.id, event?.capacity]);
 
-  const isEnded = useMemo(() => {
+  const isEnded = (() => {
     if (!event?.starts_at) return false;
     const start = new Date(event.starts_at);
     if (Number.isNaN(start.getTime())) return false;
     return start < new Date();
-  }, [event?.starts_at]);
+  })();
 
   const img = event?.cover_path ? coverUrl(event.cover_path) : "";
   const dateText = event?.starts_at ? formatDateTime(lang, event.starts_at) : "";
+  const deadlineText = formatDeadlineDate(lang, event?.registration_deadline);
+  const isClosed = isRegistrationClosed(event?.registration_deadline);
 
   const titleMain =
     lang === "ja" ? (event?.title_ja || event?.title_en) : (event?.title_en || event?.title_ja);
@@ -135,12 +134,23 @@ export default function EventDetail() {
       };
     }
 
+    if (isClosed) {
+      return {
+        label: lang === "ja" ? "申込締切済み" : "Closed",
+        pill: "bg-amber-100 text-amber-800 border border-amber-200",
+        button: "bg-green-600 hover:bg-green-700 focus-visible:ring-green-600",
+        disableRegister: true,
+        reason: "closed",
+      };
+    }
+
     if (event.capacity === null) {
       return {
         label: lang === "ja" ? "受付中" : "Open",
         pill: "bg-green-100 text-green-700 border border-green-200",
         button: "bg-green-600 hover:bg-green-700 focus-visible:ring-green-600",
         disableRegister: false,
+        reason: "open",
       };
     }
 
@@ -151,6 +161,7 @@ export default function EventDetail() {
         pill: "bg-slate-100 text-slate-700 border border-slate-200",
         button: "bg-green-600 hover:bg-green-700 focus-visible:ring-green-600",
         disableRegister: true, // 数が確定するまで押せないように
+        reason: "checking",
       };
     }
 
@@ -162,6 +173,7 @@ export default function EventDetail() {
         pill: "bg-red-100 text-red-700 border border-red-200",
         button: "bg-green-600 hover:bg-green-700 focus-visible:ring-green-600",
         disableRegister: true,
+        reason: "full",
       };
     }
 
@@ -170,8 +182,9 @@ export default function EventDetail() {
       pill: "bg-green-100 text-green-700 border border-green-200",
       button: "bg-green-600 hover:bg-green-700 focus-visible:ring-green-600",
       disableRegister: false,
+      reason: "open",
     };
-  }, [event, isEnded, lang, countLoading, count]);
+  }, [event, isEnded, isClosed, lang, countLoading, count]);
 
   if (loading) {
     return (
@@ -284,6 +297,19 @@ export default function EventDetail() {
             </div>
           </div>
 
+          {/* 申込締切 */}
+          {deadlineText && (
+            <div>
+              <p className="text-sm font-bold text-slate-500">
+                {lang === "ja" ? "申込締切" : "Registration Deadline"}
+              </p>
+              <div className="mt-2 flex items-center gap-3 text-slate-900">
+                <CalendarDays className="h-5 w-5 text-green-600" />
+                <p className="font-bold">{deadlineText}</p>
+              </div>
+            </div>
+          )}
+
           {/* 定員 */}
           {event.capacity !== null && (
             <div>
@@ -348,7 +374,11 @@ export default function EventDetail() {
           <p className="mt-3 text-center text-sm font-semibold text-slate-500">
             {isEnded
               ? (lang === "ja" ? "このイベントは終了しました。" : "This event has ended.")
-              : (lang === "ja" ? "現在参加登録できません。" : "Registration is not available now.")}
+              : status?.reason === "closed"
+                ? (lang === "ja" ? "申込締切日を過ぎたため、参加登録を受け付けていません。" : "Registration is closed for this event.")
+                : status?.reason === "full"
+                  ? (lang === "ja" ? "定員に達したため、参加登録を受け付けていません。" : "This event is full.")
+                  : (lang === "ja" ? "現在参加登録できません。" : "Registration is not available now.")}
           </p>
         )}
       </div>

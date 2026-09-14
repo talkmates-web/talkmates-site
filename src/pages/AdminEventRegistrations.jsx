@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import { formatDeadlineDate, isRegistrationClosed } from "../lib/deadline";
 import {
   campusOptions,
   japaneseLevelOptions,
@@ -46,7 +47,7 @@ export default function AdminEventRegistrations() {
 
     const { data: eventData, error: eventError } = await supabase
       .from("events")
-      .select("id,slug,title_ja,title_en,capacity,starts_at")
+      .select("id,slug,title_ja,title_en,capacity,starts_at,registration_deadline")
       .eq("id", id)
       .maybeSingle();
 
@@ -132,6 +133,8 @@ export default function AdminEventRegistrations() {
   const count = registrations.length;
   const cap = event?.capacity;
   const isFull = cap !== null && cap !== undefined && count >= cap;
+  const deadlineText = formatDeadlineDate("ja", event?.registration_deadline);
+  const isClosed = isRegistrationClosed(event?.registration_deadline);
 
   return (
     <div className="min-h-screen">
@@ -164,6 +167,11 @@ export default function AdminEventRegistrations() {
               <Badge variant="neutral">
                 開催日: {new Date(event.starts_at).toLocaleString("ja-JP")}
               </Badge>
+              {deadlineText && (
+                <Badge variant={isClosed ? "warning" : "neutral"}>
+                  申込締切: {deadlineText}
+                </Badge>
+              )}
             </div>
           )}
         </div>

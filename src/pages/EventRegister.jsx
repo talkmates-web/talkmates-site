@@ -5,6 +5,7 @@ import { useParams, Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useLang } from "../contexts/LangContext";
 import { getEventRegistrationCount } from "../lib/eventHelpers";
+import { formatDeadlineDate, isRegistrationClosed } from "../lib/deadline";
 import {
   campusOptions,
   japaneseLevelOptions,
@@ -52,7 +53,7 @@ export default function EventRegister() {
 
     const { data: eventData } = await supabase
       .from("events")
-      .select("id,slug,title_en,title_ja,starts_at,location,capacity")
+      .select("id,slug,title_en,title_ja,starts_at,registration_deadline,location,capacity")
       .eq("slug", slug)
       .maybeSingle();
 
@@ -105,6 +106,14 @@ export default function EventRegister() {
     return currentCount >= event.capacity;
   }, [countLoading, event?.capacity, currentCount]);
 
+  const isClosed = isRegistrationClosed(event?.registration_deadline);
+  const isEnded = (() => {
+    if (!event?.starts_at) return false;
+    const start = new Date(event.starts_at);
+    if (Number.isNaN(start.getTime())) return false;
+    return start < new Date();
+  })();
+
   const validate = () => {
     if (!name.trim()) {
       setError(lang === "ja" ? "名前を入力してください" : "Please enter your name");
@@ -145,6 +154,14 @@ export default function EventRegister() {
     e.preventDefault();
     setError("");
     if (!validate()) return;
+    if (isEnded) {
+      setError(lang === "ja" ? "このイベントは終了しました。" : "This event has ended.");
+      return;
+    }
+    if (isClosed) {
+      setError(lang === "ja" ? "申込締切日を過ぎたため、参加登録を受け付けていません。" : "Registration is closed for this event.");
+      return;
+    }
 
     setSubmitting(true);
 
@@ -170,6 +187,8 @@ export default function EventRegister() {
       if (data.reason === "full") {
         setError(lang === "ja" ? "申し訳ありません。定員に達しました。" : "Sorry, this event is now full.");
         setCurrentCount(event.capacity);
+      } else if (data.reason === "closed") {
+        setError(lang === "ja" ? "申込締切日を過ぎたため、参加登録を受け付けていません。" : "Registration is closed for this event.");
       } else if (data.reason === "invalid") {
         setError(lang === "ja" ? "イベントが見つかりません" : "Event not found");
       } else {
@@ -209,6 +228,7 @@ export default function EventRegister() {
     dateStyle: "full",
     timeStyle: "short",
   });
+  const deadlineText = formatDeadlineDate(lang, event.registration_deadline);
 
   if (success) {
     return (
@@ -261,6 +281,13 @@ export default function EventRegister() {
             {event.location}
           </Badge>
         )}
+        {deadlineText && (
+          <Badge variant={isClosed ? "warning" : "neutral"}>
+            <CalendarDays className="h-3.5 w-3.5" />
+            {lang === "ja" ? "締切: " : "Deadline: "}
+            {deadlineText}
+          </Badge>
+        )}
         {event.capacity !== null && countLoading && (
           <Badge variant="neutral">
             {lang === "ja" ? "席数確認中..." : "Checking seats..."}
@@ -275,7 +302,19 @@ export default function EventRegister() {
       </div>
 
       <div className="mt-6">
-        {countLoading ? (
+        {isEnded ? (
+          <Alert variant="info">
+            {lang === "ja"
+              ? "このイベントは終了しました。"
+              : "This event has ended."}
+          </Alert>
+        ) : isClosed ? (
+          <Alert variant="warning">
+            {lang === "ja"
+              ? "申込締切日を過ぎたため、参加登録を受け付けていません。"
+              : "Registration is closed for this event."}
+          </Alert>
+        ) : countLoading ? (
           <Alert variant="info">
             {lang === "ja"
               ? "席数を確認中です。しばらくお待ちください..."
