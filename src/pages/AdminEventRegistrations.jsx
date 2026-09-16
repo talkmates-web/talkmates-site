@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { formatDeadlineDate, isRegistrationClosed } from "../lib/deadline";
+import { formatEventDate } from "../lib/dateOnly";
 import {
   campusOptions,
   japaneseLevelOptions,
@@ -165,7 +166,7 @@ export default function AdminEventRegistrations() {
                 {count} / {cap ?? "∞"}
               </Badge>
               <Badge variant="neutral">
-                開催日: {new Date(event.starts_at).toLocaleString("ja-JP")}
+                開催日: {formatEventDate("ja", event.starts_at)}
               </Badge>
               {deadlineText && (
                 <Badge variant={isClosed ? "warning" : "neutral"}>

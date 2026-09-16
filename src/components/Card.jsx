@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLang } from "../contexts/LangContext";
 import { getEventRegistrationCount } from "../lib/eventHelpers";
 import { formatDeadlineDate, isRegistrationClosed } from "../lib/deadline";
+import { formatEventDate, isPastEventDate } from "../lib/dateOnly";
 import { supabase } from "../lib/supabase";
 //lucide-reactはアイコン用の外部ライブラリ
 import { CalendarDays, MapPin } from "lucide-react";
@@ -20,16 +21,6 @@ function coverUrl(cover_path) {
   return data?.publicUrl || "";
 }
 
-function formatDateOnly(lang, iso) {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString(lang === "ja" ? "ja-JP" : "en-US", {
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-  });
-}
-
 export default function Card({ e }) {
   const { lang } = useLang();
   const title = pickLang(lang, e.title_en, e.title_ja);
@@ -37,11 +28,7 @@ export default function Card({ e }) {
   const img = coverUrl(e.cover_path);
 
   const isEnded = useMemo(() => {
-    const start = new Date(e.starts_at);
-    if (Number.isNaN(start.getTime())) return false;
-    //Date()で引数なしの時は今この瞬間の日時を表す
-    //return start < new Date()はbooleanでtrueかfalseを返す。
-    return start < new Date();
+    return isPastEventDate(e.starts_at);
   }, [e.starts_at]);
 
   const capacity = e.capacity ?? null;
@@ -76,7 +63,7 @@ export default function Card({ e }) {
     };
   }, [e?.id, isEnded, capacity]);
 
-  const dateText = formatDateOnly(lang, e.starts_at);
+  const dateText = formatEventDate(lang, e.starts_at);
   const deadlineText = formatDeadlineDate(lang, e.registration_deadline);
   const isClosed = isRegistrationClosed(e.registration_deadline);
 

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useLang } from "../contexts/LangContext";
 import { supabase } from "../lib/supabase";
+import { getTokyoDateString } from "../lib/dateOnly";
 import Card from "../components/Card";
 import { Button, Panel, EmptyState } from "../components/ui";
 import { Instagram, CalendarDays, Users } from "lucide-react";
@@ -18,19 +19,19 @@ export default function Home() {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const nowIso = new Date().toISOString();
+      const today = getTokyoDateString();
 
       const nextRes = await supabase
         .from("events")
         .select("id,slug,starts_at,registration_deadline,location,cover_path,capacity,title_en,title_ja,description_en,description_ja")
-        .gte("starts_at", nowIso)
+        .gte("starts_at", today)
         .order("starts_at", { ascending: true })
         .limit(10);
 
       const pastRes = await supabase
         .from("events")
         .select("id,slug,starts_at,registration_deadline,location,cover_path,capacity,title_en,title_ja,description_en,description_ja")
-        .lt("starts_at", nowIso)
+        .lt("starts_at", today)
         .order("starts_at", { ascending: false })
         .limit(12);
 

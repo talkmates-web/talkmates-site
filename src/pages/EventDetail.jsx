@@ -5,26 +5,13 @@ import { supabase } from "../lib/supabase";
 import { useLang } from "../contexts/LangContext";
 import { getEventRegistrationCount } from "../lib/eventHelpers";
 import { formatDeadlineDate, isRegistrationClosed } from "../lib/deadline";
+import { formatEventDate, isPastEventDate } from "../lib/dateOnly";
 import { CalendarDays, MapPin, Users, ArrowLeft } from "lucide-react";
 
 function coverUrl(cover_path) {
   if (!cover_path) return "";
   const { data } = supabase.storage.from("event-covers").getPublicUrl(cover_path);
   return data?.publicUrl || "";
-}
-
-function formatDateTime(lang, iso) {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  // 画像に寄せて「2024/4/15 18:00:00」風
-  return d.toLocaleString(lang === "ja" ? "ja-JP" : "en-US", {
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
 }
 
 export default function EventDetail() {
@@ -102,15 +89,11 @@ export default function EventDetail() {
     };
   }, [event?.id, event?.capacity]);
 
-  const isEnded = (() => {
-    if (!event?.starts_at) return false;
-    const start = new Date(event.starts_at);
-    if (Number.isNaN(start.getTime())) return false;
-    return start < new Date();
-  })();
+  const startsAt = event?.starts_at;
+  const isEnded = startsAt ? isPastEventDate(startsAt) : false;
 
   const img = event?.cover_path ? coverUrl(event.cover_path) : "";
-  const dateText = event?.starts_at ? formatDateTime(lang, event.starts_at) : "";
+  const dateText = startsAt ? formatEventDate(lang, startsAt) : "";
   const deadlineText = formatDeadlineDate(lang, event?.registration_deadline);
   const isClosed = isRegistrationClosed(event?.registration_deadline);
 
@@ -272,13 +255,13 @@ export default function EventDetail() {
         )}
       </div>
 
-      {/* Info panel (日時/場所/定員) */}
+      {/* Info panel (開催日/場所/定員) */}
       <div className="mt-6 rounded-3xl bg-slate-50 p-6 ring-1 ring-slate-200/70">
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-          {/* 開催日時 */}
+          {/* 開催日 */}
           <div>
             <p className="text-sm font-bold text-slate-500">
-              {lang === "ja" ? "開催日時" : "Date & Time"}
+              {lang === "ja" ? "開催日" : "Date"}
             </p>
             <div className="mt-2 flex items-center gap-3 text-slate-900">
               <CalendarDays className="h-5 w-5 text-green-600" />

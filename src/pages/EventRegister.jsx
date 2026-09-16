@@ -6,6 +6,7 @@ import { supabase } from "../lib/supabase";
 import { useLang } from "../contexts/LangContext";
 import { getEventRegistrationCount } from "../lib/eventHelpers";
 import { formatDeadlineDate, isRegistrationClosed } from "../lib/deadline";
+import { formatEventDate, isPastEventDate } from "../lib/dateOnly";
 import {
   campusOptions,
   japaneseLevelOptions,
@@ -107,12 +108,7 @@ export default function EventRegister() {
   }, [countLoading, event?.capacity, currentCount]);
 
   const isClosed = isRegistrationClosed(event?.registration_deadline);
-  const isEnded = (() => {
-    if (!event?.starts_at) return false;
-    const start = new Date(event.starts_at);
-    if (Number.isNaN(start.getTime())) return false;
-    return start < new Date();
-  })();
+  const isEnded = event?.starts_at ? isPastEventDate(event.starts_at) : false;
 
   const validate = () => {
     if (!name.trim()) {
@@ -224,10 +220,7 @@ export default function EventRegister() {
   }
 
   const title = pickLang(lang, event.title_en, event.title_ja);
-  const dateText = new Date(event.starts_at).toLocaleString(lang === "ja" ? "ja-JP" : "en-US", {
-    dateStyle: "full",
-    timeStyle: "short",
-  });
+  const dateText = formatEventDate(lang, event.starts_at, { full: true });
   const deadlineText = formatDeadlineDate(lang, event.registration_deadline);
 
   if (success) {

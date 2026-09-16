@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { formatDeadlineDate, isRegistrationClosed } from "../lib/deadline";
+import { compareEventDates, formatEventDate, isPastEventDate } from "../lib/dateOnly";
 import { Badge, Button, Panel, Alert } from "../components/ui";
 import { LogOut, Users, FileText, CalendarDays } from "lucide-react";
 
@@ -94,14 +95,12 @@ export default function AdminDashboard() {
 
   const filteredDocs = tab === "all" ? categorized : categorized.filter((d) => d._cat === tab);
 
-  // upcoming / past
-  const now = new Date();
   const upcomingEvents = (events ?? [])
-    .filter((ev) => new Date(ev.starts_at) >= now)
-    .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at));
+    .filter((ev) => !isPastEventDate(ev.starts_at))
+    .sort((a, b) => compareEventDates(a.starts_at, b.starts_at));
   const pastEvents = (events ?? [])
-    .filter((ev) => new Date(ev.starts_at) < now)
-    .sort((a, b) => new Date(b.starts_at) - new Date(a.starts_at));
+    .filter((ev) => isPastEventDate(ev.starts_at))
+    .sort((a, b) => compareEventDates(b.starts_at, a.starts_at));
 
   const renderEventList = (eventList, emptyMessage) => (
     <div className="grid gap-4 md:grid-cols-2">
@@ -119,7 +118,7 @@ export default function AdminDashboard() {
                 </div>
                 <div className="mt-1 inline-flex items-center gap-2 text-sm text-slate-600">
                   <CalendarDays className="h-4 w-4" />
-                  {new Date(ev.starts_at).toLocaleString("ja-JP")}
+                  {formatEventDate("ja", ev.starts_at)}
                 </div>
                 {deadlineText && (
                   <div className="mt-1 inline-flex items-center gap-2 text-sm text-slate-600">
