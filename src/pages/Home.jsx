@@ -1,7 +1,7 @@
 //他のコードと基本同じ
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { useLang } from "../contexts/LangContext";
+import { useLang } from "../contexts/langCore";
 import { supabase } from "../lib/supabase";
 import { getTokyoDateString } from "../lib/dateOnly";
 import Card from "../components/Card";

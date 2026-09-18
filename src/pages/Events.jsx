@@ -1,7 +1,7 @@
 //他のコードと基本おなじ
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { useLang } from "../contexts/LangContext";
+import { useLang } from "../contexts/langCore";
 import { getTokyoDateString } from "../lib/dateOnly";
 import Card from "../components/Card";
 import { Panel } from "../components/ui";

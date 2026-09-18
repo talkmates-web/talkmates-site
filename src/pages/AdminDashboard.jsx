@@ -24,45 +24,6 @@ export default function AdminDashboard() {
   const [eventsErr, setEventsErr] = useState("");
   const [registrationCounts, setRegistrationCounts] = useState({});
 
-  const loadEvents = async () => {
-    setEventsErr("");
-
-    const { data, error } = await supabase
-      .from("events")
-      .select("id,slug,title_ja,title_en,capacity,starts_at,registration_deadline")
-      .order("starts_at", { ascending: false })
-      .limit(50);
-
-    if (error) {
-      setEventsErr(error.message);
-      return;
-    }
-
-    setEvents(data ?? []);
-
-    const counts = {};
-    for (const ev of data ?? []) {
-      const { count } = await supabase
-        .from("event_registrations")
-        .select("*", { count: "exact", head: true })
-        .eq("event_id", ev.id);
-      counts[ev.id] = count || 0;
-    }
-    setRegistrationCounts(counts);
-  };
-
-  const loadDocs = async () => {
-    setDocErr("");
-    const { data, error } = await supabase
-      .from("staff_documents")
-      .select("id,title,file_path,category,created_at")
-      .order("created_at", { ascending: false })
-      .limit(200);
-
-    if (error) return setDocErr(error.message);
-    setDocs(data ?? []);
-  };
-
   const openPdf = async (file_path) => {
     const { data, error } = await supabase.storage
       .from(PDF_BUCKET)
@@ -77,8 +38,73 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => {
-    loadDocs();
-    loadEvents();
+    let cancelled = false;
+
+    (async () => {
+      const docsRes = await supabase
+        .from("staff_documents")
+        .select("id,title,file_path,category,created_at")
+        .order("created_at", { ascending: false })
+        .limit(200);
+
+      if (cancelled) return;
+
+      if (docsRes.error) {
+        setDocErr(docsRes.error.message);
+      } else {
+        setDocErr("");
+        setDocs(docsRes.data ?? []);
+      }
+
+      const eventsRes = await supabase
+        .from("events")
+        .select("id,slug,title_ja,title_en,capacity,starts_at,registration_deadline,registration_type,capacity_by_nationality,capacity_japanese,capacity_international")
+        .order("starts_at", { ascending: false })
+        .limit(50);
+
+      if (cancelled) return;
+
+      if (eventsRes.error) {
+        setEventsErr(eventsRes.error.message);
+        return;
+      }
+
+      const nextEvents = eventsRes.data ?? [];
+      const nextCounts = {};
+      for (const ev of nextEvents) {
+        const table = ev.registration_type === "camp" ? "camp_applications" : "event_registrations";
+
+        if (ev.capacity_by_nationality) {
+          const [japaneseRes, internationalRes] = await Promise.all([
+            supabase.from(table).select("*", { count: "exact", head: true }).eq("event_id", ev.id).eq("participant_type", "japanese"),
+            supabase.from(table).select("*", { count: "exact", head: true }).eq("event_id", ev.id).eq("participant_type", "international"),
+          ]);
+
+          if (cancelled) return;
+
+          const japanese = japaneseRes.count || 0;
+          const international = internationalRes.count || 0;
+          nextCounts[ev.id] = { total: japanese + international, japanese, international };
+          continue;
+        }
+
+        const { count } = await supabase
+          .from(table)
+          .select("*", { count: "exact", head: true })
+          .eq("event_id", ev.id);
+
+        if (cancelled) return;
+        nextCounts[ev.id] = { total: count || 0, japanese: null, international: null };
+      }
+
+      setEventsErr("");
+      setEvents(nextEvents);
+      setRegistrationCounts(nextCounts);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const categorized = docs.map((d) => ({
@@ -105,10 +131,16 @@ export default function AdminDashboard() {
   const renderEventList = (eventList, emptyMessage) => (
     <div className="grid gap-4 md:grid-cols-2">
       {eventList.map((ev) => {
-        const count = registrationCounts[ev.id] ?? 0;
-        const isFull = ev.capacity !== null && count >= ev.capacity;
+        const counts = registrationCounts[ev.id] ?? { total: 0, japanese: null, international: null };
         const isClosed = isRegistrationClosed(ev.registration_deadline);
         const deadlineText = formatDeadlineDate("ja", ev.registration_deadline);
+
+        const japaneseFull = ev.capacity_by_nationality && ev.capacity_japanese !== null && (counts.japanese ?? 0) >= ev.capacity_japanese;
+        const internationalFull = ev.capacity_by_nationality && ev.capacity_international !== null && (counts.international ?? 0) >= ev.capacity_international;
+        const isFull = ev.capacity_by_nationality
+          ? japaneseFull && internationalFull
+          : ev.capacity !== null && counts.total >= ev.capacity;
+
         return (
           <Panel key={ev.id} className="p-6">
             <div className="flex items-start justify-between gap-3">
@@ -129,17 +161,34 @@ export default function AdminDashboard() {
               </div>
               <div className="flex flex-col items-end gap-2">
                 {isClosed && <Badge variant="warning">締切済み</Badge>}
-                <Badge variant={isFull ? "error" : "success"}>
-                  {count} / {ev.capacity ?? "∞"}
-                </Badge>
+                {ev.capacity_by_nationality ? (
+                  <>
+                    <Badge variant={japaneseFull ? "error" : "success"}>
+                      日本人 {counts.japanese ?? 0} / {ev.capacity_japanese ?? "∞"}
+                    </Badge>
+                    <Badge variant={internationalFull ? "error" : "success"}>
+                      留学生 {counts.international ?? 0} / {ev.capacity_international ?? "∞"}
+                    </Badge>
+                  </>
+                ) : (
+                  <Badge variant={isFull ? "error" : "success"}>
+                    {counts.total} / {ev.capacity ?? "∞"}
+                  </Badge>
+                )}
               </div>
             </div>
 
             <div className="mt-5 grid gap-3">
-              <Link to={`/admin/events/${ev.id}/registrations`}>
+              <Link
+                to={
+                  ev.registration_type === "camp"
+                    ? `/admin/camps/${ev.id}/applications`
+                    : `/admin/events/${ev.id}/registrations`
+                }
+              >
                 <Button variant="primary" fullWidth>
                   <Users className="h-4 w-4 mr-2" />
-                  参加者一覧を見る（{count}名）
+                  {ev.registration_type === "camp" ? "申込者一覧を見る" : "参加者一覧を見る"}（{counts.total}名）
                 </Button>
               </Link>
             </div>

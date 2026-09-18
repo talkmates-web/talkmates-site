@@ -1,6 +1,6 @@
 //理解済み
 import { Link } from "react-router-dom";
-import { useLang } from "../contexts/LangContext";
+import { useLang } from "../contexts/langCore";
 
 export default function StaffLoginCard() {
     const { lang } = useLang();

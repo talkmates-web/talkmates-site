@@ -1,8 +1,8 @@
-import { useEffect } from "react";
+import { createElement, useEffect } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
-import { useLang } from "../contexts/LangContext";
+import { useLang } from "../contexts/langCore";
 import TalkMatesLogo from "../assets/TalkMatesLogo.png";
-import { cx } from "./ui";
+import { cx } from "../lib/cx";
 import { Home, CalendarDays, Languages, Shield } from "lucide-react";
 
 export default function Layout() {
@@ -25,7 +25,7 @@ export default function Layout() {
             : "border-slate-100 bg-white text-slate-700 hover:border-green-200 hover:bg-green-50 hover:text-green-700"
         )}
       >
-        <Icon className="h-4 w-4" />
+        {createElement(Icon, { className: "h-4 w-4" })}
         <span className="hidden sm:inline">{label}</span>
       </Link>
     );

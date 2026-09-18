@@ -2,8 +2,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
-import { useLang } from "../contexts/LangContext";
-import { getEventRegistrationCount } from "../lib/eventHelpers";
+import { useLang } from "../contexts/langCore";
+import {
+  getEventRegistrationCount,
+  getCampApplicationCount,
+  getEventRegistrationBreakdown,
+  getCampApplicationBreakdown,
+} from "../lib/eventHelpers";
 import { formatDeadlineDate, isRegistrationClosed } from "../lib/deadline";
 import { formatEventDate, isPastEventDate } from "../lib/dateOnly";
 import { CalendarDays, MapPin, Users, ArrowLeft } from "lucide-react";
@@ -22,6 +27,8 @@ export default function EventDetail() {
   const [loading, setLoading] = useState(true);
 
   const [count, setCount] = useState(null); // 参加者数
+  const [japaneseCount, setJapaneseCount] = useState(null);
+  const [internationalCount, setInternationalCount] = useState(null);
   const [countLoading, setCountLoading] = useState(false);
   const [countErr, setCountErr] = useState("");
 
@@ -35,7 +42,7 @@ export default function EventDetail() {
         .from("events")
         // ★ count取得に event.id が必要
         .select(
-          "id,slug,starts_at,registration_deadline,location,cover_path,title_en,title_ja,description_en,description_ja,capacity"
+          "id,slug,starts_at,registration_deadline,location,cover_path,title_en,title_ja,description_en,description_ja,capacity,registration_type,capacity_by_nationality,capacity_japanese,capacity_international"
         )
         .eq("slug", slug)
         .maybeSingle();
@@ -64,13 +71,42 @@ export default function EventDetail() {
     (async () => {
       setCountErr("");
       setCount(null);
+      setJapaneseCount(null);
+      setInternationalCount(null);
 
       if (!event?.id) return;
+
+      if (event.capacity_by_nationality) {
+        setCountLoading(true);
+
+        const { total, japanese, international, error } =
+          event.registration_type === "camp"
+            ? await getCampApplicationBreakdown(event.id)
+            : await getEventRegistrationBreakdown(event.id);
+
+        if (cancelled) return;
+
+        setCountLoading(false);
+
+        if (error) {
+          console.warn("[EventDetail] failed to fetch registration breakdown:", error);
+          setCountErr(error);
+          return;
+        }
+        setCount(total ?? 0);
+        setJapaneseCount(japanese ?? 0);
+        setInternationalCount(international ?? 0);
+        return;
+      }
+
       if (event.capacity === null) return;
 
       setCountLoading(true);
 
-      const { count: c, error } = await getEventRegistrationCount(event.id);
+      const { count: c, error } =
+        event.registration_type === "camp"
+          ? await getCampApplicationCount(event.id)
+          : await getEventRegistrationCount(event.id);
 
       if (cancelled) return;
 
@@ -87,7 +123,7 @@ export default function EventDetail() {
     return () => {
       cancelled = true;
     };
-  }, [event?.id, event?.capacity]);
+  }, [event?.id, event?.capacity, event?.capacity_by_nationality, event?.registration_type]);
 
   const startsAt = event?.starts_at;
   const isEnded = startsAt ? isPastEventDate(startsAt) : false;
@@ -124,6 +160,41 @@ export default function EventDetail() {
         button: "bg-green-600 hover:bg-green-700 focus-visible:ring-green-600",
         disableRegister: true,
         reason: "closed",
+      };
+    }
+
+    if (event.capacity_by_nationality) {
+      if (countLoading || japaneseCount === null || internationalCount === null) {
+        return {
+          label: lang === "ja" ? "席数確認中" : "Checking seats",
+          pill: "bg-slate-100 text-slate-700 border border-slate-200",
+          button: "bg-green-600 hover:bg-green-700 focus-visible:ring-green-600",
+          disableRegister: true,
+          reason: "checking",
+        };
+      }
+
+      const japaneseFull = event.capacity_japanese !== null && japaneseCount >= event.capacity_japanese;
+      const internationalFull = event.capacity_international !== null && internationalCount >= event.capacity_international;
+
+      // 事前判定は「両プールとも満員」の場合のみ行う。片方だけ満員でも
+      // 登録ボタンは有効のままにし、実際の可否は属性選択後のフォーム側で判定する。
+      if (japaneseFull && internationalFull) {
+        return {
+          label: lang === "ja" ? "満員" : "Full",
+          pill: "bg-red-100 text-red-700 border border-red-200",
+          button: "bg-green-600 hover:bg-green-700 focus-visible:ring-green-600",
+          disableRegister: true,
+          reason: "full",
+        };
+      }
+
+      return {
+        label: lang === "ja" ? "受付中" : "Open",
+        pill: "bg-green-100 text-green-700 border border-green-200",
+        button: "bg-green-600 hover:bg-green-700 focus-visible:ring-green-600",
+        disableRegister: false,
+        reason: "open",
       };
     }
 
@@ -167,7 +238,7 @@ export default function EventDetail() {
       disableRegister: false,
       reason: "open",
     };
-  }, [event, isEnded, isClosed, lang, countLoading, count]);
+  }, [event, isEnded, isClosed, lang, countLoading, count, japaneseCount, internationalCount]);
 
   if (loading) {
     return (
@@ -202,6 +273,16 @@ export default function EventDetail() {
       : (countLoading || count === null)
         ? (lang === "ja" ? "確認中…" : "Loading…")
         : `${count} / ${event.capacity}名`;
+
+  const japaneseCapacityText =
+    countLoading || japaneseCount === null
+      ? (lang === "ja" ? "確認中…" : "Loading…")
+      : `${japaneseCount} / ${event.capacity_japanese ?? "∞"}${lang === "ja" ? "名" : ""}`;
+
+  const internationalCapacityText =
+    countLoading || internationalCount === null
+      ? (lang === "ja" ? "確認中…" : "Loading…")
+      : `${internationalCount} / ${event.capacity_international ?? "∞"}${lang === "ja" ? "名" : ""}`;
 
   return (
     <div className="mx-auto w-full max-w-4xl px-4 pb-16 sm:px-6 lg:px-8">
@@ -294,19 +375,42 @@ export default function EventDetail() {
           )}
 
           {/* 定員 */}
-          {event.capacity !== null && (
+          {event.capacity_by_nationality ? (
             <div>
               <p className="text-sm font-bold text-slate-500">
                 {lang === "ja" ? "定員" : "Capacity"}
               </p>
               <div className="mt-2 flex items-center gap-3 text-slate-900">
                 <Users className="h-5 w-5 text-green-600" />
-                <p className="font-bold">{capacityText}</p>
+                <p className="font-bold">
+                  {lang === "ja" ? "日本人" : "Japanese"}: {japaneseCapacityText}
+                </p>
+              </div>
+              <div className="mt-1 flex items-center gap-3 text-slate-900">
+                <Users className="h-5 w-5 text-green-600" />
+                <p className="font-bold">
+                  {lang === "ja" ? "留学生" : "International"}: {internationalCapacityText}
+                </p>
               </div>
               {countErr && (
                 <p className="mt-2 text-sm text-red-600">{countErr}</p>
               )}
             </div>
+          ) : (
+            event.capacity !== null && (
+              <div>
+                <p className="text-sm font-bold text-slate-500">
+                  {lang === "ja" ? "定員" : "Capacity"}
+                </p>
+                <div className="mt-2 flex items-center gap-3 text-slate-900">
+                  <Users className="h-5 w-5 text-green-600" />
+                  <p className="font-bold">{capacityText}</p>
+                </div>
+                {countErr && (
+                  <p className="mt-2 text-sm text-red-600">{countErr}</p>
+                )}
+              </div>
+            )
           )}
         </div>
       </div>
@@ -338,7 +442,13 @@ export default function EventDetail() {
       {/* Register button */}
       <div className="mt-10">
         <Link
-          to={status?.disableRegister ? "#" : `/events/${event.slug}/register`}
+          to={
+            status?.disableRegister
+              ? "#"
+              : event.registration_type === "camp"
+                ? `/events/${event.slug}/camp-register`
+                : `/events/${event.slug}/register`
+          }
           onClick={(e) => {
             if (status?.disableRegister) e.preventDefault();
           }}

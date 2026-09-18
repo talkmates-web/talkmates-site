@@ -1,26 +1,25 @@
-//useCallbackが何やねんそれ状態である。
-//useCallbackとuseMemoの違いについて、zennの記事にしてまとめて理解した。
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useLang } from "../contexts/langCore";
-import { getEventRegistrationCount, getEventRegistrationBreakdown } from "../lib/eventHelpers";
+import { getCampApplicationCount, getCampApplicationBreakdown } from "../lib/eventHelpers";
 import { formatDeadlineDate, isRegistrationClosed } from "../lib/deadline";
 import { formatEventDate, getTokyoDateString, isPastEventDate } from "../lib/dateOnly";
 import {
   campusOptions,
   gradeOptions,
   universityOptions,
+  allergyStatusOptions,
   nationalityOptions,
 } from "../lib/formOptions";
-import { Badge, Button, Panel, Alert, Input, Select } from "../components/ui";
+import { Badge, Button, Panel, Alert, Input, Select, Textarea, Checkbox, Modal } from "../components/ui";
 import { ArrowLeft, CalendarDays, MapPin, CheckCircle2 } from "lucide-react";
 
 function pickLang(lang, en, ja) {
   return lang === "ja" && ja ? ja : en;
 }
 
-export default function EventRegister() {
+export default function CampRegister() {
   const { slug } = useParams();
   const { lang } = useLang();
 
@@ -33,19 +32,34 @@ export default function EventRegister() {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
-  const [loadedSlug, setLoadedSlug] = useState(null);
 
-  const [campus, setCampus] = useState("");
+  const [cancellationPolicy, setCancellationPolicy] = useState(null);
+  const [disclaimerPolicy, setDisclaimerPolicy] = useState(null);
+  const [policiesLoading, setPoliciesLoading] = useState(true);
+
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
-  const [hometown, setHometown] = useState("");
   const [university, setUniversity] = useState("");
   const [studentId, setStudentId] = useState("");
+  const [campus, setCampus] = useState("");
   const [grade, setGrade] = useState("");
   const [birthday, setBirthday] = useState("");
+  const [hometown, setHometown] = useState("");
   const [participantType, setParticipantType] = useState("");
 
-  // 成功・エラー画面に遷移したときにページトップにスクロール
+  const [allergyStatus, setAllergyStatus] = useState("");
+  const [allergyDetails, setAllergyDetails] = useState("");
+  const [dietaryReligious, setDietaryReligious] = useState("");
+  const [dietaryRestrictions, setDietaryRestrictions] = useState("");
+  const [accommodationNotes, setAccommodationNotes] = useState("");
+
+  const [cancellationModalOpen, setCancellationModalOpen] = useState(false);
+  const [disclaimerModalOpen, setDisclaimerModalOpen] = useState(false);
+  const [cancellationViewed, setCancellationViewed] = useState(false);
+  const [disclaimerViewed, setDisclaimerViewed] = useState(false);
+  const [cancellationAgreed, setCancellationAgreed] = useState(false);
+  const [disclaimerAgreed, setDisclaimerAgreed] = useState(false);
+
   useEffect(() => {
     if (success || error) {
       window.scrollTo(0, 0);
@@ -66,11 +80,10 @@ export default function EventRegister() {
     }
 
     if (eventData.capacity_by_nationality) {
-      const { total, japanese, international, error } = await getEventRegistrationBreakdown(eventData.id);
+      const { total, japanese, international, error } = await getCampApplicationBreakdown(eventData.id);
 
       if (error) {
-        console.warn("[EventRegister] failed to fetch registration breakdown:", error);
-        // エラー時は満員扱い（安全側）
+        console.warn("[CampRegister] failed to fetch application breakdown:", error);
         return {
           event: eventData,
           currentCount: (eventData.capacity_japanese ?? 0) + (eventData.capacity_international ?? 0),
@@ -87,19 +100,16 @@ export default function EventRegister() {
       };
     }
 
-    // RPC 経由で参加人数を取得（エラー時は安全側に倒す）
-    const { count, error } = await getEventRegistrationCount(eventData.id);
+    const { count, error: countError } = await getCampApplicationCount(eventData.id);
 
-    if (error) {
-      console.warn("[EventRegister] failed to fetch registration count:", error);
-      // エラー時は満員扱い（安全側）
+    if (countError) {
+      console.warn("[CampRegister] failed to fetch application count:", countError);
       return { event: eventData, currentCount: eventData.capacity ?? 0, japaneseCount: 0, internationalCount: 0 };
     }
 
     return { event: eventData, currentCount: count ?? 0, japaneseCount: 0, internationalCount: 0 };
   }, [slug]);
 
-  // 初回読み込み
   useEffect(() => {
     let cancelled = false;
 
@@ -111,7 +121,6 @@ export default function EventRegister() {
       setCurrentCount(snapshot.currentCount);
       setJapaneseCount(snapshot.japaneseCount);
       setInternationalCount(snapshot.internationalCount);
-      setLoadedSlug(slug);
       setCountLoading(false);
       setLoading(false);
     })();
@@ -119,44 +128,56 @@ export default function EventRegister() {
     return () => {
       cancelled = true;
     };
-  }, [loadEventSnapshot, slug]);
+  }, [loadEventSnapshot]);
 
-  // ページにフォーカスが戻ったときにデータを再取得
+  // 現在公開中の規約本文を取得（anonはstatus='published'のみ閲覧可）
   useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible" && !success) {
-        (async () => {
-          const snapshot = await loadEventSnapshot();
-          setEvent(snapshot.event);
-          setCurrentCount(snapshot.currentCount);
-          setJapaneseCount(snapshot.japaneseCount);
-          setInternationalCount(snapshot.internationalCount);
-          setLoadedSlug(slug);
-          setCountLoading(false);
-          setLoading(false);
-        })();
-      }
-    };
+    let cancelled = false;
 
-    document.addEventListener("visibilitychange", handleVisibilityChange);
+    (async () => {
+      if (!event?.id) return;
+      setPoliciesLoading(true);
+
+      const [cancellationRes, disclaimerRes] = await Promise.all([
+        supabase
+          .from("policies")
+          .select("id,title,content,version")
+          .eq("event_id", event.id)
+          .eq("type", "cancellation")
+          .eq("status", "published")
+          .maybeSingle(),
+        supabase
+          .from("policies")
+          .select("id,title,content,version")
+          .eq("event_id", event.id)
+          .eq("type", "disclaimer")
+          .eq("status", "published")
+          .maybeSingle(),
+      ]);
+
+      if (cancelled) return;
+
+      setCancellationPolicy(cancellationRes.data ?? null);
+      setDisclaimerPolicy(disclaimerRes.data ?? null);
+      setPoliciesLoading(false);
+    })();
+
     return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      cancelled = true;
     };
-  }, [loadEventSnapshot, slug, success]);
+  }, [event?.id]);
 
   const isByNationality = !!event?.capacity_by_nationality;
 
-  // 読み込み中またはエラー時は安全側（登録不可）
   const isFull = useMemo(() => {
-    if (countLoading) return true; // 読み込み中は登録不可
+    if (countLoading) return true;
     if (isByNationality) {
-      const japaneseFull = event?.capacity_japanese !== null && event?.capacity_japanese !== undefined && japaneseCount >= event.capacity_japanese;
-      const internationalFull = event?.capacity_international !== null && event?.capacity_international !== undefined && internationalCount >= event.capacity_international;
-      // 両方のプールが埋まっている場合のみ、フォーム全体を非表示にする
-      return japaneseFull && internationalFull;
+      const jFull = event?.capacity_japanese !== null && event?.capacity_japanese !== undefined && japaneseCount >= event.capacity_japanese;
+      const iFull = event?.capacity_international !== null && event?.capacity_international !== undefined && internationalCount >= event.capacity_international;
+      return jFull && iFull;
     }
-    if (event?.capacity === null) return false; // 無制限
-    return currentCount >= event.capacity;
+    if (event?.capacity === null) return false;
+    return currentCount >= event?.capacity;
   }, [countLoading, isByNationality, event?.capacity, event?.capacity_japanese, event?.capacity_international, currentCount, japaneseCount, internationalCount]);
 
   const japaneseFull = isByNationality && event?.capacity_japanese !== null && event?.capacity_japanese !== undefined && japaneseCount >= event.capacity_japanese;
@@ -166,13 +187,15 @@ export default function EventRegister() {
   const isEnded = event?.starts_at ? isPastEventDate(event.starts_at) : false;
   const today = getTokyoDateString();
 
+  const policiesMissing = !policiesLoading && (!cancellationPolicy || !disclaimerPolicy);
+
   const validate = () => {
     if (!name.trim()) {
-      setError(lang === "ja" ? "名前を入力してください" : "Please enter your name");
+      setError(lang === "ja" ? "氏名を入力してください" : "Please enter your name");
       return false;
     }
     if (name.trim().length > 100) {
-      setError(lang === "ja" ? "名前は100文字以内で入力してください" : "Name must be 100 characters or less");
+      setError(lang === "ja" ? "氏名は100文字以内で入力してください" : "Name must be 100 characters or less");
       return false;
     }
     if (!phone.trim()) {
@@ -213,6 +236,14 @@ export default function EventRegister() {
       setError(lang === "ja" ? "出身地を入力してください" : "Please enter your hometown");
       return false;
     }
+    if (!allergyStatus) {
+      setError(lang === "ja" ? "アレルギーの有無を選択してください" : "Please select your allergy status");
+      return false;
+    }
+    if (allergyStatus === "has" && !allergyDetails.trim()) {
+      setError(lang === "ja" ? "アレルギーの詳細を入力してください" : "Please describe your allergy");
+      return false;
+    }
     if (isByNationality) {
       if (!participantType) {
         setError(lang === "ja" ? "日本人／留学生を選択してください" : "Please select Japanese or International Student");
@@ -226,6 +257,14 @@ export default function EventRegister() {
         setError(lang === "ja" ? "申し訳ありません。留学生枠は定員に達しました。" : "Sorry, the international-student slots are full.");
         return false;
       }
+    }
+    if (!cancellationAgreed) {
+      setError(lang === "ja" ? "キャンセル・返金規定への同意が必要です" : "You must agree to the cancellation policy");
+      return false;
+    }
+    if (!disclaimerAgreed) {
+      setError(lang === "ja" ? "注意事項・免責事項への同意が必要です" : "You must agree to the disclaimer");
+      return false;
     }
     return true;
   };
@@ -242,33 +281,33 @@ export default function EventRegister() {
       setError(lang === "ja" ? "申込締切日を過ぎたため、参加登録を受け付けていません。" : "Registration is closed for this event.");
       return;
     }
+    if (policiesMissing) {
+      setError(lang === "ja" ? "現在、規約が公開されていないため申込みできません。運営にお問い合わせください。" : "Registration is unavailable because the policies have not been published yet.");
+      return;
+    }
 
     setSubmitting(true);
 
+    const basePayload = {
+      p_event_id: event.id,
+      p_name: name.trim(),
+      p_phone: phone.trim(),
+      p_university: university,
+      p_campus: campus,
+      p_grade: grade,
+      p_birthday: birthday,
+      p_hometown: hometown.trim(),
+      p_allergy_status: allergyStatus,
+      p_student_id: studentId.trim() || null,
+      p_allergy_details: allergyStatus === "has" ? allergyDetails.trim() : null,
+      p_dietary_religious: dietaryReligious.trim() || null,
+      p_dietary_restrictions: dietaryRestrictions.trim() || null,
+      p_accommodation_notes: accommodationNotes.trim() || null,
+    };
+
     const { data, error: rpcError } = isByNationality
-      ? await supabase.rpc("register_for_event_v3", {
-          p_event_id: event.id,
-          p_name: name.trim(),
-          p_phone: phone.trim(),
-          p_university: university,
-          p_campus: campus,
-          p_grade: grade,
-          p_birthday: birthday,
-          p_hometown: hometown.trim(),
-          p_participant_type: participantType,
-          p_student_id: studentId.trim() || null,
-        })
-      : await supabase.rpc("register_for_event_v2", {
-          p_event_id: event.id,
-          p_name: name.trim(),
-          p_phone: phone.trim(),
-          p_university: university,
-          p_campus: campus,
-          p_grade: grade,
-          p_birthday: birthday,
-          p_hometown: hometown.trim(),
-          p_student_id: studentId.trim() || null,
-        });
+      ? await supabase.rpc("register_for_camp_v2", { ...basePayload, p_participant_type: participantType })
+      : await supabase.rpc("register_for_camp", basePayload);
 
     setSubmitting(false);
 
@@ -284,15 +323,16 @@ export default function EventRegister() {
             ? (lang === "ja"
                 ? `申し訳ありません。${participantType === "japanese" ? "日本人" : "留学生"}枠は定員に達しました。`
                 : `Sorry, the ${participantType === "japanese" ? "Japanese-participant" : "international-student"} slots are full.`)
-            : (lang === "ja" ? "申し訳ありません。定員に達しました。" : "Sorry, this event is now full.")
+            : (lang === "ja" ? "申し訳ありません。定員に達しました。" : "Sorry, this camp is now full.")
         );
-        // 最新の人数に更新
         const snapshot = await loadEventSnapshot();
         setCurrentCount(snapshot.currentCount);
         setJapaneseCount(snapshot.japaneseCount);
         setInternationalCount(snapshot.internationalCount);
       } else if (data.reason === "closed") {
         setError(lang === "ja" ? "申込締切日を過ぎたため、参加登録を受け付けていません。" : "Registration is closed for this event.");
+      } else if (data.reason === "policy_missing") {
+        setError(lang === "ja" ? "規約が公開されていないため申込みできません。運営にお問い合わせください。" : "Registration is unavailable because the policies have not been published yet.");
       } else if (data.reason === "invalid") {
         setError(lang === "ja" ? "イベントが見つかりません" : "Event not found");
       } else {
@@ -304,7 +344,7 @@ export default function EventRegister() {
     setSuccess(true);
   };
 
-  if (loading || loadedSlug !== slug) {
+  if (loading) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-12 text-slate-600">
         Loading...
@@ -327,25 +367,6 @@ export default function EventRegister() {
     );
   }
 
-  if (event.registration_type === "camp") {
-    return (
-      <div className="mx-auto max-w-2xl px-4 py-12">
-        <Panel className="p-6 text-slate-700">
-          {lang === "ja"
-            ? "このイベントは合宿専用の申込フォームをご利用ください。"
-            : "Please use the camp-specific registration form for this event."}
-          <div className="mt-4">
-            <Link to={`/events/${slug}/camp-register`}>
-              <Button variant="primary">
-                {lang === "ja" ? "合宿申込フォームへ" : "Go to camp registration"}
-              </Button>
-            </Link>
-          </div>
-        </Panel>
-      </div>
-    );
-  }
-
   const title = pickLang(lang, event.title_en, event.title_ja);
   const dateText = formatEventDate(lang, event.starts_at, { full: true });
   const deadlineText = formatDeadlineDate(lang, event.registration_deadline);
@@ -358,12 +379,12 @@ export default function EventRegister() {
             <CheckCircle2 className="h-7 w-7" />
           </div>
           <h2 className="text-2xl font-black text-slate-900">
-            {lang === "ja" ? "参加登録が完了しました！" : "Registration Complete!"}
+            {lang === "ja" ? "申し込みが完了しました！" : "Application Complete!"}
           </h2>
           <p className="mt-2 text-slate-600">
             {lang === "ja"
-              ? `${title}への参加登録を受け付けました。当日お会いできることを楽しみにしています！`
-              : `You have successfully registered for ${title}. We look forward to seeing you!`}
+              ? `${title}への申し込みを受け付けました。当日お会いできることを楽しみにしています！`
+              : `Your application for ${title} has been received. We look forward to seeing you!`}
           </p>
 
           <div className="mt-6">
@@ -386,7 +407,7 @@ export default function EventRegister() {
       </Link>
 
       <h1 className="mt-4 text-3xl font-black tracking-tight text-slate-900">
-        {lang === "ja" ? "参加登録" : "Event Registration"}
+        {lang === "ja" ? "合宿申し込み" : "Camp Application"}
       </h1>
       <p className="mt-1 text-slate-600">{title}</p>
 
@@ -445,27 +466,27 @@ export default function EventRegister() {
       <div className="mt-6">
         {isEnded ? (
           <Alert variant="info">
-            {lang === "ja"
-              ? "このイベントは終了しました。"
-              : "This event has ended."}
+            {lang === "ja" ? "このイベントは終了しました。" : "This event has ended."}
           </Alert>
         ) : isClosed ? (
           <Alert variant="warning">
-            {lang === "ja"
-              ? "申込締切日を過ぎたため、参加登録を受け付けていません。"
-              : "Registration is closed for this event."}
+            {lang === "ja" ? "申込締切日を過ぎたため、参加登録を受け付けていません。" : "Registration is closed for this event."}
           </Alert>
-        ) : countLoading ? (
+        ) : countLoading || policiesLoading ? (
           <Alert variant="info">
-            {lang === "ja"
-              ? "席数を確認中です。しばらくお待ちください..."
-              : "Checking available seats. Please wait..."}
+            {lang === "ja" ? "読み込み中です。しばらくお待ちください..." : "Loading. Please wait..."}
           </Alert>
         ) : isFull ? (
           <Alert variant="error">
             {lang === "ja"
               ? "申し訳ありませんが、定員に達したため参加登録を受け付けていません。"
-              : "Sorry, we are no longer accepting registrations as the event has reached its capacity."}
+              : "Sorry, we are no longer accepting registrations as this camp has reached its capacity."}
+          </Alert>
+        ) : policiesMissing ? (
+          <Alert variant="error">
+            {lang === "ja"
+              ? "現在、規約が公開されていないため申込みできません。運営にお問い合わせください。"
+              : "Registration is unavailable because the policies have not been published yet."}
           </Alert>
         ) : (
           <form onSubmit={handleSubmit}>
@@ -474,7 +495,7 @@ export default function EventRegister() {
 
               <div className="grid gap-5">
                 <Input
-                  label={lang === "ja" ? "名前" : "Name"}
+                  label={lang === "ja" ? "氏名" : "Name"}
                   required
                   value={name}
                   onChange={setName}
@@ -563,22 +584,153 @@ export default function EventRegister() {
                   placeholder={lang === "ja" ? "東京都" : "Tokyo, Japan"}
                 />
 
+                <div className="border-t-2 border-slate-100 pt-5">
+                  <h2 className="mb-4 text-lg font-black text-slate-900">
+                    {lang === "ja" ? "宿泊・食事について" : "Accommodation & Meals"}
+                  </h2>
+
+                  <div className="grid gap-5">
+                    <Select
+                      label={lang === "ja" ? "アレルギーの有無" : "Allergies"}
+                      required
+                      value={allergyStatus}
+                      onChange={setAllergyStatus}
+                      placeholder={lang === "ja" ? "選択してください" : "Select..."}
+                      options={allergyStatusOptions.map((o) => ({ value: o.value, label: lang === "ja" ? o.label : o.labelEn }))}
+                    />
+
+                    {allergyStatus === "has" && (
+                      <Textarea
+                        label={lang === "ja" ? "アレルギー詳細" : "Allergy Details"}
+                        required
+                        value={allergyDetails}
+                        onChange={setAllergyDetails}
+                        maxLength={500}
+                        placeholder={lang === "ja" ? "卵、そば 等" : "e.g. eggs, buckwheat"}
+                      />
+                    )}
+
+                    <Textarea
+                      label={lang === "ja" ? "宗教・文化上食べられないもの" : "Religious / cultural dietary restrictions"}
+                      value={dietaryReligious}
+                      onChange={setDietaryReligious}
+                      maxLength={500}
+                    />
+
+                    <Textarea
+                      label={lang === "ja" ? "ベジタリアン等の食事制限" : "Vegetarian / other dietary restrictions"}
+                      value={dietaryRestrictions}
+                      onChange={setDietaryRestrictions}
+                      maxLength={500}
+                    />
+
+                    <Textarea
+                      label={lang === "ja" ? "宿泊・参加上、運営に事前共有したい事項" : "Anything else the organizers should know"}
+                      value={accommodationNotes}
+                      onChange={setAccommodationNotes}
+                      maxLength={500}
+                    />
+                  </div>
+                </div>
+
+                <div className="border-t-2 border-slate-100 pt-5">
+                  <h2 className="mb-4 text-lg font-black text-slate-900">
+                    {lang === "ja" ? "キャンセル・返金規定" : "Cancellation Policy"}
+                  </h2>
+                  <p className="text-sm text-slate-600">
+                    {lang === "ja"
+                      ? "申込後のキャンセルには、時期に応じてキャンセル料が発生する場合があります。"
+                      : "Depending on the timing, a cancellation fee may apply after you apply."}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="mt-3"
+                    onClick={() => {
+                      setCancellationModalOpen(true);
+                      setCancellationViewed(true);
+                    }}
+                  >
+                    {lang === "ja" ? "キャンセル・返金規定を確認する" : "View cancellation policy"}
+                  </Button>
+
+                  <Checkbox
+                    className="mt-3"
+                    label={lang === "ja" ? "キャンセル・返金規定を確認し、同意します" : "I have read and agree to the cancellation policy"}
+                    checked={cancellationAgreed}
+                    onChange={setCancellationAgreed}
+                    required
+                    disabled={!cancellationViewed}
+                  />
+                  {!cancellationViewed && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      {lang === "ja" ? "上のボタンから規定を確認すると同意できます。" : "Open the policy above to enable this checkbox."}
+                    </p>
+                  )}
+                </div>
+
+                <div className="border-t-2 border-slate-100 pt-5">
+                  <h2 className="mb-4 text-lg font-black text-slate-900">
+                    {lang === "ja" ? "参加にあたっての注意事項・責任範囲" : "Terms & Disclaimer"}
+                  </h2>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setDisclaimerModalOpen(true);
+                      setDisclaimerViewed(true);
+                    }}
+                  >
+                    {lang === "ja" ? "注意事項・免責事項を確認する" : "View terms & disclaimer"}
+                  </Button>
+
+                  <Checkbox
+                    className="mt-3"
+                    label={lang === "ja" ? "注意事項・免責事項を確認し、同意します" : "I have read and agree to the terms & disclaimer"}
+                    checked={disclaimerAgreed}
+                    onChange={setDisclaimerAgreed}
+                    required
+                    disabled={!disclaimerViewed}
+                  />
+                  {!disclaimerViewed && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      {lang === "ja" ? "上のボタンから内容を確認すると同意できます。" : "Open the terms above to enable this checkbox."}
+                    </p>
+                  )}
+                </div>
+
                 <Button
                   type="submit"
                   variant="primary"
                   size="lg"
                   fullWidth
-                  disabled={submitting}
+                  disabled={submitting || !cancellationAgreed || !disclaimerAgreed}
                 >
                   {submitting
                     ? (lang === "ja" ? "送信中..." : "Submitting...")
-                    : (lang === "ja" ? "参加登録する" : "Register")}
+                    : (lang === "ja" ? "申し込む" : "Apply")}
                 </Button>
               </div>
             </Panel>
           </form>
         )}
       </div>
+
+      <Modal
+        open={cancellationModalOpen}
+        onClose={() => setCancellationModalOpen(false)}
+        title={cancellationPolicy?.title || (lang === "ja" ? "キャンセル・返金規定" : "Cancellation Policy")}
+      >
+        {cancellationPolicy?.content || ""}
+      </Modal>
+
+      <Modal
+        open={disclaimerModalOpen}
+        onClose={() => setDisclaimerModalOpen(false)}
+        title={disclaimerPolicy?.title || (lang === "ja" ? "注意事項・免責事項" : "Terms & Disclaimer")}
+      >
+        {disclaimerPolicy?.content || ""}
+      </Modal>
     </div>
   );
 }

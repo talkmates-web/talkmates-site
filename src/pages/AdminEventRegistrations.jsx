@@ -5,9 +5,9 @@ import { formatDeadlineDate, isRegistrationClosed } from "../lib/deadline";
 import { formatEventDate } from "../lib/dateOnly";
 import {
   campusOptions,
-  japaneseLevelOptions,
-  japaneseMotivationOptions,
-  englishLevelOptions,
+  gradeOptions,
+  universityOptions,
+  nationalityOptions,
 } from "../lib/formOptions";
 import { Alert, Badge, Button, Panel, Input, EmptyState } from "../components/ui";
 import {
@@ -22,7 +22,7 @@ import {
 
 function getLabel(options, value) {
   const opt = options.find((o) => o.value === value);
-  return opt ? opt.label : value;
+  return opt ? opt.label : value || "-";
 }
 
 export default function AdminEventRegistrations() {
@@ -48,7 +48,7 @@ export default function AdminEventRegistrations() {
 
     const { data: eventData, error: eventError } = await supabase
       .from("events")
-      .select("id,slug,title_ja,title_en,capacity,starts_at,registration_deadline")
+      .select("id,slug,title_ja,title_en,capacity,starts_at,registration_deadline,capacity_by_nationality,capacity_japanese,capacity_international")
       .eq("id", id)
       .maybeSingle();
 
@@ -66,7 +66,7 @@ export default function AdminEventRegistrations() {
 
     const { data: regData, error: regError } = await supabase
       .from("event_registrations")
-      .select("id,name,phone,hometown,campus,japanese_level,japanese_motivation,english_level,created_at")
+      .select("id,name,phone,university,student_id,campus,grade,birthday,hometown,participant_type,created_at")
       .eq("event_id", id)
       .order("created_at", { ascending: false });
 
@@ -92,6 +92,10 @@ export default function AdminEventRegistrations() {
           return (
             (r.name || "").toLowerCase().includes(q) ||
             (r.phone || "").includes(q) ||
+            (r.student_id || "").includes(q) ||
+            getLabel(universityOptions, r.university).toLowerCase().includes(q) ||
+            getLabel(gradeOptions, r.grade).toLowerCase().includes(q) ||
+            getLabel(nationalityOptions, r.participant_type).toLowerCase().includes(q) ||
             (r.hometown || "").toLowerCase().includes(q)
           );
         });
@@ -137,6 +141,12 @@ export default function AdminEventRegistrations() {
   const deadlineText = formatDeadlineDate("ja", event?.registration_deadline);
   const isClosed = isRegistrationClosed(event?.registration_deadline);
 
+  const isByNationality = !!event?.capacity_by_nationality;
+  const japaneseCount = registrations.filter((r) => r.participant_type === "japanese").length;
+  const internationalCount = registrations.filter((r) => r.participant_type === "international").length;
+  const japaneseFull = isByNationality && event?.capacity_japanese !== null && event?.capacity_japanese !== undefined && japaneseCount >= event.capacity_japanese;
+  const internationalFull = isByNationality && event?.capacity_international !== null && event?.capacity_international !== undefined && internationalCount >= event.capacity_international;
+
   return (
     <div className="min-h-screen">
       <header className="border-b-2 border-slate-100 bg-white">
@@ -162,9 +172,20 @@ export default function AdminEventRegistrations() {
 
           {event && (
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={isFull ? "error" : "success"}>
-                {count} / {cap ?? "∞"}
-              </Badge>
+              {isByNationality ? (
+                <>
+                  <Badge variant={japaneseFull ? "error" : "success"}>
+                    日本人 {japaneseCount} / {event.capacity_japanese ?? "∞"}
+                  </Badge>
+                  <Badge variant={internationalFull ? "error" : "success"}>
+                    留学生 {internationalCount} / {event.capacity_international ?? "∞"}
+                  </Badge>
+                </>
+              ) : (
+                <Badge variant={isFull ? "error" : "success"}>
+                  {count} / {cap ?? "∞"}
+                </Badge>
+              )}
               <Badge variant="neutral">
                 開催日: {formatEventDate("ja", event.starts_at)}
               </Badge>
@@ -187,7 +208,7 @@ export default function AdminEventRegistrations() {
                 label="検索"
                 value={searchTerm}
                 onChange={setSearchTerm}
-                placeholder="名前、電話番号、出身地で検索..."
+                placeholder="名前、電話番号、学籍番号、大学、学年、出身地で検索..."
                 icon={<Search className="h-5 w-5" />}
               />
             </div>
@@ -232,32 +253,43 @@ export default function AdminEventRegistrations() {
                         <div className="text-sm text-slate-800">{r.phone || "-"}</div>
                       </div>
                       <div>
-                        <div className="text-xs font-bold text-slate-600">出身地</div>
-                        <div className="text-sm text-slate-800">{r.hometown || "-"}</div>
+                        <div className="text-xs font-bold text-slate-600">所属大学</div>
+                        <div className="text-sm text-slate-800">{getLabel(universityOptions, r.university)}</div>
                       </div>
                     </div>
 
-                    <div>
-                      <div className="text-xs font-bold text-slate-600">キャンパス</div>
-                      <div className="text-sm text-slate-800">{getLabel(campusOptions, r.campus)}</div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <div className="text-xs font-bold text-slate-600">学籍番号</div>
+                        <div className="text-sm text-slate-800">{r.student_id || "-"}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-slate-600">キャンパス</div>
+                        <div className="text-sm text-slate-800">{getLabel(campusOptions, r.campus)}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-slate-600">学年</div>
+                        <div className="text-sm text-slate-800">{getLabel(gradeOptions, r.grade)}</div>
+                      </div>
+                      {isByNationality && (
+                        <div>
+                          <div className="text-xs font-bold text-slate-600">日本人／留学生</div>
+                          <div className="text-sm text-slate-800">{getLabel(nationalityOptions, r.participant_type)}</div>
+                        </div>
+                      )}
                     </div>
 
                     {expanded.has(r.id) && (
                       <div className="pt-3 mt-3 border-t border-slate-200 space-y-2">
                         <div className="grid grid-cols-2 gap-3">
                           <div>
-                            <div className="text-xs font-bold text-slate-600">日本語</div>
-                            <div className="text-sm text-slate-800">{getLabel(japaneseLevelOptions, r.japanese_level)}</div>
+                            <div className="text-xs font-bold text-slate-600">誕生日</div>
+                            <div className="text-sm text-slate-800">{formatEventDate("ja", r.birthday) || "-"}</div>
                           </div>
                           <div>
-                            <div className="text-xs font-bold text-slate-600">英語</div>
-                            <div className="text-sm text-slate-800">{getLabel(englishLevelOptions, r.english_level)}</div>
+                            <div className="text-xs font-bold text-slate-600">出身地</div>
+                            <div className="text-sm text-slate-800">{r.hometown || "-"}</div>
                           </div>
-                        </div>
-
-                        <div>
-                          <div className="text-xs font-bold text-slate-600">参加動機</div>
-                          <div className="text-sm text-slate-800">{getLabel(japaneseMotivationOptions, r.japanese_motivation)}</div>
                         </div>
 
                         <div>
@@ -297,11 +329,15 @@ export default function AdminEventRegistrations() {
                       <tr>
                         <th className="px-4 py-3 text-left text-sm font-black text-slate-700">名前</th>
                         <th className="px-4 py-3 text-left text-sm font-black text-slate-700">電話番号</th>
-                        <th className="px-4 py-3 text-left text-sm font-black text-slate-700">出身地</th>
+                        <th className="px-4 py-3 text-left text-sm font-black text-slate-700">所属大学</th>
+                        <th className="px-4 py-3 text-left text-sm font-black text-slate-700">学籍番号</th>
                         <th className="px-4 py-3 text-left text-sm font-black text-slate-700">キャンパス</th>
-                        <th className="px-4 py-3 text-left text-sm font-black text-slate-700">日本語</th>
-                        <th className="px-4 py-3 text-left text-sm font-black text-slate-700">参加動機</th>
-                        <th className="px-4 py-3 text-left text-sm font-black text-slate-700">英語</th>
+                        <th className="px-4 py-3 text-left text-sm font-black text-slate-700">学年</th>
+                        {isByNationality && (
+                          <th className="px-4 py-3 text-left text-sm font-black text-slate-700">日本人／留学生</th>
+                        )}
+                        <th className="px-4 py-3 text-left text-sm font-black text-slate-700">誕生日</th>
+                        <th className="px-4 py-3 text-left text-sm font-black text-slate-700">出身地</th>
                         <th className="px-4 py-3 text-left text-sm font-black text-slate-700">登録日時</th>
                       </tr>
                     </thead>
@@ -310,11 +346,15 @@ export default function AdminEventRegistrations() {
                         <tr key={r.id} className="hover:bg-slate-50 transition-colors">
                           <td className="px-4 py-3 text-sm font-bold text-slate-900">{r.name}</td>
                           <td className="px-4 py-3 text-sm text-slate-700">{r.phone || "-"}</td>
-                          <td className="px-4 py-3 text-sm text-slate-700">{r.hometown || "-"}</td>
+                          <td className="px-4 py-3 text-sm text-slate-700">{getLabel(universityOptions, r.university)}</td>
+                          <td className="px-4 py-3 text-sm text-slate-700">{r.student_id || "-"}</td>
                           <td className="px-4 py-3 text-sm text-slate-700">{getLabel(campusOptions, r.campus)}</td>
-                          <td className="px-4 py-3 text-sm text-slate-700">{getLabel(japaneseLevelOptions, r.japanese_level)}</td>
-                          <td className="px-4 py-3 text-sm text-slate-700">{getLabel(japaneseMotivationOptions, r.japanese_motivation)}</td>
-                          <td className="px-4 py-3 text-sm text-slate-700">{getLabel(englishLevelOptions, r.english_level)}</td>
+                          <td className="px-4 py-3 text-sm text-slate-700">{getLabel(gradeOptions, r.grade)}</td>
+                          {isByNationality && (
+                            <td className="px-4 py-3 text-sm text-slate-700">{getLabel(nationalityOptions, r.participant_type)}</td>
+                          )}
+                          <td className="px-4 py-3 text-sm text-slate-700">{formatEventDate("ja", r.birthday) || "-"}</td>
+                          <td className="px-4 py-3 text-sm text-slate-700">{r.hometown || "-"}</td>
                           <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
                             {new Date(r.created_at).toLocaleString("ja-JP")}
                           </td>

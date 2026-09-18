@@ -1,7 +1,7 @@
 //理解済み
 import { Link } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
-import { useLang } from "../contexts/LangContext";
+import { useLang } from "../contexts/langCore";
 import { getEventRegistrationCount } from "../lib/eventHelpers";
 import { formatDeadlineDate, isRegistrationClosed } from "../lib/deadline";
 import { formatEventDate, isPastEventDate } from "../lib/dateOnly";
@@ -33,13 +33,14 @@ export default function Card({ e }) {
 
   const capacity = e.capacity ?? null;
 
-  const [regCount, setRegCount] = useState(null);
-  const [countErr, setCountErr] = useState(false);
+  const [registrationState, setRegistrationState] = useState({
+    eventId: null,
+    status: "idle",
+    count: null,
+  });
 
   useEffect(() => {
     let cancelled = false;
-    setCountErr(false);
-    setRegCount(null);
 
     if (!e?.id || isEnded) return;
     if (capacity === null) return;
@@ -51,17 +52,25 @@ export default function Card({ e }) {
 
       if (error) {
         console.warn("[Card] failed to fetch registration count:", error);
-        setCountErr(true);
+        setRegistrationState({ eventId: e.id, status: "error", count: null });
         return;
       }
 
-      setRegCount(count ?? 0);
+      setRegistrationState({ eventId: e.id, status: "success", count: count ?? 0 });
     })();
 
     return () => {
       cancelled = true;
     };
   }, [e?.id, isEnded, capacity]);
+
+  const currentRegistrationState =
+    registrationState.eventId === e.id
+      ? registrationState
+      : { eventId: e.id, status: "idle", count: null };
+  const regCount =
+    currentRegistrationState.status === "success" ? currentRegistrationState.count : null;
+  const countErr = currentRegistrationState.status === "error";
 
   const dateText = formatEventDate(lang, e.starts_at);
   const deadlineText = formatDeadlineDate(lang, e.registration_deadline);

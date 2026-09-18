@@ -5,10 +5,12 @@ import Home from "./pages/Home";
 import Events from "./pages/Events";
 import EventDetail from "./pages/EventDetail";
 import EventRegister from "./pages/EventRegister";
+import CampRegister from "./pages/CampRegister";
 import { LangProvider } from "./contexts/LangContext";
 import AdminLogin from "./pages/AdminLogin";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminEventRegistrations from "./pages/AdminEventRegistrations";
+import AdminCampApplications from "./pages/AdminCampApplications";
 import RequireAuth from "./components/RequireAuth";
 
 
@@ -22,6 +24,7 @@ export default function App() {
             <Route path="/events" element={<Events />} />
             <Route path="/events/:slug" element={<EventDetail />} />
             <Route path="/events/:slug/register" element={<EventRegister />} />
+            <Route path="/events/:slug/camp-register" element={<CampRegister />} />
             <Route path="/admin/login" element={<AdminLogin />} />
             <Route
               path="/admin"
@@ -36,6 +39,14 @@ export default function App() {
               element={
                 <RequireAuth>
                   <AdminEventRegistrations />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/admin/camps/:id/applications"
+              element={
+                <RequireAuth>
+                  <AdminCampApplications />
                 </RequireAuth>
               }
             />
