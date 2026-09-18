@@ -19,6 +19,11 @@ export const nationalityOptions = [
     { value: "international", label: "留学生", labelEn: "International Student" },
 ];
 
+export const genderOptions = [
+    { value: "male", label: "男性", labelEn: "Male" },
+    { value: "female", label: "女性", labelEn: "Female" },
+];
+
 export const allergyStatusOptions = [
     { value: "none", label: "なし", labelEn: "None" },
     { value: "has", label: "あり", labelEn: "Yes" },

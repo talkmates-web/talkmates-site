@@ -9,6 +9,7 @@ import {
   universityOptions,
   allergyStatusOptions,
   nationalityOptions,
+  genderOptions,
 } from "../lib/formOptions";
 import { Alert, Badge, Button, Panel, Input, EmptyState } from "../components/ui";
 import {
@@ -68,7 +69,7 @@ export default function AdminCampApplications() {
     const { data: appData, error: appError } = await supabase
       .from("camp_applications")
       .select(
-        "id,name,phone,university,student_id,campus,grade,birthday,hometown,participant_type,allergy_status,allergy_details,dietary_religious,dietary_restrictions,accommodation_notes,cancellation_policy_version,cancellation_agreed_at,disclaimer_version,disclaimer_agreed_at,application_status,created_at"
+        "id,name,phone,university,student_id,campus,grade,birthday,hometown,participant_type,gender,allergy_status,allergy_details,dietary_religious,dietary_restrictions,accommodation_notes,cancellation_policy_version,cancellation_agreed_at,disclaimer_version,disclaimer_agreed_at,application_status,created_at"
       )
       .eq("event_id", id)
       .order("created_at", { ascending: false });
@@ -272,6 +273,11 @@ export default function AdminCampApplications() {
                     <div>
                       <div className="text-xs font-bold text-slate-600">出身地</div>
                       <div className="text-sm text-slate-800">{r.hometown || "-"}</div>
+                    </div>
+
+                    <div>
+                      <div className="text-xs font-bold text-slate-600">性別（部屋割り用）</div>
+                      <div className="text-sm text-slate-800">{getLabel(genderOptions, r.gender)}</div>
                     </div>
 
                     <div>

@@ -11,6 +11,7 @@ import {
   universityOptions,
   allergyStatusOptions,
   nationalityOptions,
+  genderOptions,
 } from "../lib/formOptions";
 import { Badge, Button, Panel, Alert, Input, Select, Textarea, Checkbox, Modal } from "../components/ui";
 import { ArrowLeft, CalendarDays, MapPin, CheckCircle2 } from "lucide-react";
@@ -47,6 +48,7 @@ export default function CampRegister() {
   const [hometown, setHometown] = useState("");
   const [participantType, setParticipantType] = useState("");
 
+  const [gender, setGender] = useState("");
   const [allergyStatus, setAllergyStatus] = useState("");
   const [allergyDetails, setAllergyDetails] = useState("");
   const [dietaryReligious, setDietaryReligious] = useState("");
@@ -303,6 +305,7 @@ export default function CampRegister() {
       p_dietary_religious: dietaryReligious.trim() || null,
       p_dietary_restrictions: dietaryRestrictions.trim() || null,
       p_accommodation_notes: accommodationNotes.trim() || null,
+      p_gender: gender || null,
     };
 
     const { data, error: rpcError } = isByNationality
@@ -590,6 +593,21 @@ export default function CampRegister() {
                   </h2>
 
                   <div className="grid gap-5">
+                    <div>
+                      <Select
+                        label={lang === "ja" ? "性別" : "Gender"}
+                        value={gender}
+                        onChange={setGender}
+                        placeholder={lang === "ja" ? "選択してください" : "Select..."}
+                        options={genderOptions.map((o) => ({ value: o.value, label: lang === "ja" ? o.label : o.labelEn }))}
+                      />
+                      <p className="mt-1.5 text-xs text-slate-500">
+                        {lang === "ja"
+                          ? "合宿の部屋割りで必要なのでご協力ください。"
+                          : "This helps us arrange room assignments for the camp."}
+                      </p>
+                    </div>
+
                     <Select
                       label={lang === "ja" ? "アレルギーの有無" : "Allergies"}
                       required
