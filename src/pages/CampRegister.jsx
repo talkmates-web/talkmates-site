@@ -143,14 +143,14 @@ export default function CampRegister() {
       const [cancellationRes, disclaimerRes] = await Promise.all([
         supabase
           .from("policies")
-          .select("id,title,content,version")
+          .select("id,title,title_en,content,content_en,version")
           .eq("event_id", event.id)
           .eq("type", "cancellation")
           .eq("status", "published")
           .maybeSingle(),
         supabase
           .from("policies")
-          .select("id,title,content,version")
+          .select("id,title,title_en,content,content_en,version")
           .eq("event_id", event.id)
           .eq("type", "disclaimer")
           .eq("status", "published")
@@ -737,17 +737,23 @@ export default function CampRegister() {
       <Modal
         open={cancellationModalOpen}
         onClose={() => setCancellationModalOpen(false)}
-        title={cancellationPolicy?.title || (lang === "ja" ? "キャンセル・返金規定" : "Cancellation Policy")}
+        title={
+          (lang === "ja" ? cancellationPolicy?.title : cancellationPolicy?.title_en || cancellationPolicy?.title) ||
+          (lang === "ja" ? "キャンセル・返金規定" : "Cancellation Policy")
+        }
       >
-        {cancellationPolicy?.content || ""}
+        {(lang === "ja" ? cancellationPolicy?.content : cancellationPolicy?.content_en || cancellationPolicy?.content) || ""}
       </Modal>
 
       <Modal
         open={disclaimerModalOpen}
         onClose={() => setDisclaimerModalOpen(false)}
-        title={disclaimerPolicy?.title || (lang === "ja" ? "注意事項・免責事項" : "Terms & Disclaimer")}
+        title={
+          (lang === "ja" ? disclaimerPolicy?.title : disclaimerPolicy?.title_en || disclaimerPolicy?.title) ||
+          (lang === "ja" ? "注意事項・免責事項" : "Terms & Disclaimer")
+        }
       >
-        {disclaimerPolicy?.content || ""}
+        {(lang === "ja" ? disclaimerPolicy?.content : disclaimerPolicy?.content_en || disclaimerPolicy?.content) || ""}
       </Modal>
     </div>
   );
